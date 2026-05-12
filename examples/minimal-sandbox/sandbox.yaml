@@ -1,0 +1,15 @@
+# minimal-sandbox.yaml -- one read path, one write path, deny everything else
+sandbox:
+  name: minimal-landlock-demo
+  lifetime: persistent
+  identity:
+    type: unprivileged
+    user: openshell-demo
+
+filesystem:
+  landlock:
+    read:
+      - /opt/templates/**
+    write:
+      - /var/log/demo/${task_id}/
+    deny_default: true

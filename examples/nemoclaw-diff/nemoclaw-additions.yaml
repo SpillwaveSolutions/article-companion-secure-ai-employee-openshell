@@ -1,0 +1,30 @@
+# What NemoClaw adds to an OpenClaw manifest:
+
+# 1. Strict tool declaration -- OpenClaw allows any loaded tool;
+#    NemoClaw refuses undeclared tools at runtime.
+tools:
+  declared:
+    - name: create_user
+    - name: assign_group
+    - name: send_calendar_invite
+  enforce: strict   # NemoClaw-only; OpenClaw ignores this key
+
+# 2. Native credential providers -- OpenClaw expects bring-your-own.
+credentials:
+  providers:
+    - name: identity-provider-token
+      scope: ["users.create", "groups.assign"]
+      ttl: 4h        # token dies with the sandbox
+
+# 3. Structured audit logging -- OpenClaw has basic logging;
+#    NemoClaw adds SIEM-shaped structured output.
+audit:
+  log_level: detailed       # NemoClaw-specific
+  retention_days: 90        # NemoClaw-specific
+  sink: append-only://siem.example.com/openshell-audit
+  immutable: true
+
+# 4. Fail-closed default -- OpenClaw permits on ambiguity;
+#    NemoClaw refuses.
+policy:
+  on_ambiguity: deny        # NemoClaw default; OpenClaw default is "allow"

@@ -1,0 +1,14 @@
+# Privacy router: route prompts by classification
+inference:
+  router:
+    rules:
+      - match:
+          classification: phi        # protected health information
+        backend: nemotron-local://hipaa-7b
+      - match:
+          classification: general
+        backend: claude-on-prem://nim-endpoint
+      - match:
+          classification: "*"        # anything unclassified
+        action: deny                 # fail closed
+    deny_default: true
