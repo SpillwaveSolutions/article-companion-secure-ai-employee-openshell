@@ -165,4 +165,4 @@ def test_research_flow_llm_backend_defined():
         EXAMPLES_DIR / "research-assistant" / "flow.py"
     )
     assert hasattr(mod, "LLM_BACKEND")
-    assert "nim-endpoint" in mod.LLM_BACKEND
+    assert "nim.internal" in mod.LLM_BACKEND

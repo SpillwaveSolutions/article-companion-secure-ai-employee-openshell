@@ -16,7 +16,7 @@ ALLOWED_DOMAINS = {"docs.example.com", "blog.example.com"}
 # In production, OpenShell routes this through the privacy router.
 # For local testing without OpenShell, override with any supported provider:
 #   LLM_BACKEND = "openai/gpt-4o"
-LLM_BACKEND = "claude-on-prem://nim-endpoint"
+LLM_BACKEND = "openai/claude-sonnet@https://nim.internal:8080/v1"
 
 
 def _create_researcher():
@@ -65,7 +65,7 @@ class ResearchFlow(Flow):
         The OpenShell sandbox enforces:
         - Egress: only docs.example.com and blog.example.com
         - Filesystem: write only to /var/log/research/${task_id}/
-        - Inference: only claude-on-prem://nim-endpoint
+        - Inference: only openai/claude-sonnet@https://nim.internal:8080/v1
         - Audit: all four levels to audit.jsonl
         """
         researcher = _create_researcher()

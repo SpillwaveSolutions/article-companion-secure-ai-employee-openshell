@@ -24,7 +24,7 @@ network:
 inference:
   router:
     allow:
-      - claude-on-prem://nim-endpoint
+      - openai/claude-sonnet@https://nim.internal:8080/v1
     deny_default: true
 
 audit:

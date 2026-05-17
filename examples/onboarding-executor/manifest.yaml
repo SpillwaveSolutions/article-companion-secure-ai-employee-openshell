@@ -34,8 +34,8 @@ process:
 inference:
   router:
     allow:
-      - nemotron-local://onboarding-7b
-      - claude-on-prem://nim-endpoint
+      - ollama/nemotron:7b
+      - openai/claude-sonnet@https://nim.internal:8080/v1
     deny_default: true
 
 credentials:

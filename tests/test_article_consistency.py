@@ -98,8 +98,8 @@ def test_privacy_router_has_phi_route():
         data = yaml.safe_load(f)
     rules = data["inference"]["router"]["rules"]
     phi_rule = next(r for r in rules if r["match"]["classification"] == "phi")
-    assert "local" in phi_rule["backend"], (
-        "PHI must route to a local model, not a public endpoint"
+    assert "ollama" in phi_rule["backend"], (
+        "PHI must route to a local model (ollama), not a public endpoint"
     )
 
 
