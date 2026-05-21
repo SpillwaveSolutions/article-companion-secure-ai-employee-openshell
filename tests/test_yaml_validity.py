@@ -1,4 +1,4 @@
-"""Tests that all YAML config files parse correctly and contain expected structure."""
+"""Tests that all YAML config files parse correctly and match the real OpenShell schema."""
 
 from pathlib import Path
 
@@ -7,56 +7,46 @@ import yaml
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 
-
-# --------------------------------------------------------------------------- #
-# Parametrize over every YAML file in the repo
-# --------------------------------------------------------------------------- #
-
 ALL_YAML = sorted(EXAMPLES_DIR.rglob("*.yaml"))
+
+
+# --------------------------------------------------------------------------- #
+# Basic: every YAML file must parse
+# --------------------------------------------------------------------------- #
 
 
 @pytest.mark.parametrize("yaml_path", ALL_YAML, ids=lambda p: str(p.relative_to(EXAMPLES_DIR)))
 def test_yaml_parses(yaml_path):
     """Every YAML file must parse without errors."""
     with open(yaml_path) as f:
-        data = yaml.safe_load(f)
-    assert data is not None, f"{yaml_path.name} parsed to None"
+        # Should not raise; comment-only files parse to None which is fine
+        yaml.safe_load(f)
 
 
 # --------------------------------------------------------------------------- #
-# OpenShell manifest schema: expected top-level keys
+# OpenShell policy schema: version 1 with expected top-level keys
 # --------------------------------------------------------------------------- #
 
-MANIFEST_FILES = {
-    "minimal-sandbox/sandbox.yaml": {"sandbox", "filesystem"},
-    "onboarding-executor/manifest.yaml": {
-        "sandbox",
-        "filesystem",
-        "network",
-        "process",
-        "inference",
-        "credentials",
-        "audit",
-        "approval_gates",
+POLICY_FILES = {
+    "minimal-sandbox/policy.yaml": {
+        "version", "filesystem_policy", "landlock", "process", "network_policies",
     },
-    "research-assistant/sandbox.yaml": {
-        "sandbox",
-        "filesystem",
-        "network",
-        "inference",
-        "audit",
-        "approval_gates",
+    "onboarding-executor/onboarding-policy.yaml": {
+        "version", "filesystem_policy", "landlock", "process", "network_policies",
+    },
+    "research-assistant/research-policy.yaml": {
+        "version", "filesystem_policy", "landlock", "process", "network_policies",
     },
 }
 
 
 @pytest.mark.parametrize(
     "rel_path,expected_keys",
-    MANIFEST_FILES.items(),
-    ids=MANIFEST_FILES.keys(),
+    POLICY_FILES.items(),
+    ids=POLICY_FILES.keys(),
 )
-def test_manifest_has_expected_keys(rel_path, expected_keys):
-    """OpenShell manifests must contain the expected top-level blocks."""
+def test_policy_has_expected_keys(rel_path, expected_keys):
+    """OpenShell policies must contain the expected top-level blocks."""
     path = EXAMPLES_DIR / rel_path
     with open(path) as f:
         data = yaml.safe_load(f)
@@ -65,154 +55,126 @@ def test_manifest_has_expected_keys(rel_path, expected_keys):
     assert not missing, f"Missing keys in {rel_path}: {missing}"
 
 
+@pytest.mark.parametrize(
+    "rel_path",
+    POLICY_FILES.keys(),
+)
+def test_policy_version_is_1(rel_path):
+    """All policies must be version 1."""
+    path = EXAMPLES_DIR / rel_path
+    with open(path) as f:
+        data = yaml.safe_load(f)
+    assert data["version"] == 1
+
+
 # --------------------------------------------------------------------------- #
-# Sandbox identity must be unprivileged
+# Process: must run as non-root user
 # --------------------------------------------------------------------------- #
 
-SANDBOX_MANIFESTS = [
-    EXAMPLES_DIR / "minimal-sandbox/sandbox.yaml",
-    EXAMPLES_DIR / "onboarding-executor/manifest.yaml",
-    EXAMPLES_DIR / "research-assistant/sandbox.yaml",
+POLICY_PATHS = [EXAMPLES_DIR / p for p in POLICY_FILES]
+
+
+@pytest.mark.parametrize("policy", POLICY_PATHS, ids=lambda p: p.parent.name)
+def test_process_not_root(policy):
+    """All policies must run as a non-root user."""
+    with open(policy) as f:
+        data = yaml.safe_load(f)
+    proc = data["process"]
+    assert proc["run_as_user"] != "root", f"{policy.name}: must not run as root"
+    assert proc["run_as_group"] != "root", f"{policy.name}: must not run as root group"
+
+
+# --------------------------------------------------------------------------- #
+# Filesystem: must have read_only or read_write lists
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("policy", POLICY_PATHS, ids=lambda p: p.parent.name)
+def test_filesystem_policy_has_paths(policy):
+    """All policies must declare filesystem paths."""
+    with open(policy) as f:
+        data = yaml.safe_load(f)
+    fs = data["filesystem_policy"]
+    has_read = "read_only" in fs and len(fs["read_only"]) > 0
+    has_write = "read_write" in fs and len(fs["read_write"]) > 0
+    assert has_read or has_write, f"{policy.name}: must declare at least one path"
+
+
+@pytest.mark.parametrize("policy", POLICY_PATHS, ids=lambda p: p.parent.name)
+def test_filesystem_paths_are_absolute(policy):
+    """All filesystem paths must be absolute."""
+    with open(policy) as f:
+        data = yaml.safe_load(f)
+    fs = data["filesystem_policy"]
+    for path_list_key in ("read_only", "read_write"):
+        for path in fs.get(path_list_key, []):
+            assert path.startswith("/"), (
+                f"{policy.name}: path '{path}' in {path_list_key} must be absolute"
+            )
+
+
+# --------------------------------------------------------------------------- #
+# Landlock compatibility
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("policy", POLICY_PATHS, ids=lambda p: p.parent.name)
+def test_landlock_compatibility(policy):
+    """Landlock compatibility must be best_effort or hard_requirement."""
+    with open(policy) as f:
+        data = yaml.safe_load(f)
+    compat = data["landlock"]["compatibility"]
+    assert compat in ("best_effort", "hard_requirement"), (
+        f"{policy.name}: landlock.compatibility must be best_effort or hard_requirement"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Network policies: endpoints must have required fields
+# --------------------------------------------------------------------------- #
+
+POLICIES_WITH_NETWORK = [
+    EXAMPLES_DIR / "onboarding-executor/onboarding-policy.yaml",
+    EXAMPLES_DIR / "research-assistant/research-policy.yaml",
 ]
 
 
-@pytest.mark.parametrize(
-    "manifest", SANDBOX_MANIFESTS, ids=lambda p: p.parent.name
-)
-def test_sandbox_identity_unprivileged(manifest):
-    """All sandbox manifests must use unprivileged identity."""
-    with open(manifest) as f:
+@pytest.mark.parametrize("policy", POLICIES_WITH_NETWORK, ids=lambda p: p.parent.name)
+def test_network_endpoints_have_required_fields(policy):
+    """Each network endpoint must have host, port, protocol, enforcement."""
+    with open(policy) as f:
         data = yaml.safe_load(f)
-    identity = data["sandbox"]["identity"]
-    assert identity["type"] == "unprivileged", (
-        f"{manifest.name}: identity.type must be 'unprivileged', got '{identity['type']}'"
-    )
+    for policy_key, policy_val in data["network_policies"].items():
+        for endpoint in policy_val.get("endpoints", []):
+            for field in ("host", "port", "protocol", "enforcement"):
+                assert field in endpoint, (
+                    f"{policy.name}: endpoint in '{policy_key}' missing '{field}'"
+                )
 
 
-# --------------------------------------------------------------------------- #
-# Filesystem: deny_default must be true
-# --------------------------------------------------------------------------- #
-
-
-@pytest.mark.parametrize(
-    "manifest", SANDBOX_MANIFESTS, ids=lambda p: p.parent.name
-)
-def test_filesystem_deny_default(manifest):
-    """All sandbox manifests must have filesystem.landlock.deny_default: true."""
-    with open(manifest) as f:
+@pytest.mark.parametrize("policy", POLICIES_WITH_NETWORK, ids=lambda p: p.parent.name)
+def test_network_enforcement_is_enforce(policy):
+    """All endpoints should use 'enforce' mode (not 'audit')."""
+    with open(policy) as f:
         data = yaml.safe_load(f)
-    landlock = data["filesystem"]["landlock"]
-    assert landlock.get("deny_default") is True, (
-        f"{manifest.name}: filesystem.landlock.deny_default must be true"
-    )
+    for policy_key, policy_val in data["network_policies"].items():
+        for endpoint in policy_val.get("endpoints", []):
+            assert endpoint["enforcement"] == "enforce", (
+                f"{policy.name}: endpoint in '{policy_key}' should enforce, not audit"
+            )
 
 
 # --------------------------------------------------------------------------- #
-# Network: deny_default must be true where present
-# --------------------------------------------------------------------------- #
-
-
-def test_onboarding_network_deny_default():
-    """Onboarding manifest must have network.egress.deny_default: true."""
-    path = EXAMPLES_DIR / "onboarding-executor/manifest.yaml"
-    with open(path) as f:
-        data = yaml.safe_load(f)
-    assert data["network"]["egress"]["deny_default"] is True
-
-
-def test_research_network_deny_default():
-    """Research assistant manifest must have network.egress.deny_default: true."""
-    path = EXAMPLES_DIR / "research-assistant/sandbox.yaml"
-    with open(path) as f:
-        data = yaml.safe_load(f)
-    assert data["network"]["egress"]["deny_default"] is True
-
-
-# --------------------------------------------------------------------------- #
-# Inference: deny_default must be true
-# --------------------------------------------------------------------------- #
-
-
-@pytest.mark.parametrize(
-    "manifest",
-    [
-        EXAMPLES_DIR / "onboarding-executor/manifest.yaml",
-        EXAMPLES_DIR / "research-assistant/sandbox.yaml",
-    ],
-    ids=["onboarding", "research"],
-)
-def test_inference_deny_default(manifest):
-    """Inference router must be deny-by-default."""
-    with open(manifest) as f:
-        data = yaml.safe_load(f)
-    router = data["inference"]["router"]
-    assert router.get("deny_default") is True
-
-
-# --------------------------------------------------------------------------- #
-# Audit: immutable must be true
-# --------------------------------------------------------------------------- #
-
-
-@pytest.mark.parametrize(
-    "manifest",
-    [
-        EXAMPLES_DIR / "onboarding-executor/manifest.yaml",
-        EXAMPLES_DIR / "research-assistant/sandbox.yaml",
-    ],
-    ids=["onboarding", "research"],
-)
-def test_audit_immutable(manifest):
-    """Audit logs must be immutable."""
-    with open(manifest) as f:
-        data = yaml.safe_load(f)
-    assert data["audit"].get("immutable") is True
-
-
-# --------------------------------------------------------------------------- #
-# Credential TTLs should not exceed 24h
-# --------------------------------------------------------------------------- #
-
-
-def test_credential_ttl_reasonable():
-    """Credential TTLs must not exceed 24h (article gotcha #3)."""
-    path = EXAMPLES_DIR / "onboarding-executor/manifest.yaml"
-    with open(path) as f:
-        data = yaml.safe_load(f)
-    for provider in data["credentials"]["providers"]:
-        ttl = provider["ttl"]
-        # Parse simple hour format like "4h"
-        assert ttl.endswith("h"), f"Expected TTL in hours, got {ttl}"
-        hours = int(ttl.rstrip("h"))
-        assert hours <= 24, f"TTL {ttl} exceeds 24h"
-        # Article recommends matching sandbox lifetime; 4h is reasonable for JIT
-        assert hours <= 8, f"TTL {ttl} seems too long for a JIT sandbox"
-
-
-# --------------------------------------------------------------------------- #
-# Seccomp: must forbid ptrace
-# --------------------------------------------------------------------------- #
-
-
-def test_seccomp_forbids_ptrace():
-    """Seccomp profile must forbid ptrace."""
-    path = EXAMPLES_DIR / "onboarding-executor/manifest.yaml"
-    with open(path) as f:
-        data = yaml.safe_load(f)
-    assert "ptrace" in data["process"]["forbid"]
-
-
-# --------------------------------------------------------------------------- #
-# NemoClaw additions: expected keys
+# NemoClaw additions
 # --------------------------------------------------------------------------- #
 
 
 def test_nemoclaw_additions_structure():
-    """NemoClaw additions YAML must have the four differentiating blocks."""
+    """NemoClaw additions YAML must have the differentiating blocks."""
     path = EXAMPLES_DIR / "nemoclaw-diff/nemoclaw-additions.yaml"
     with open(path) as f:
         data = yaml.safe_load(f)
-    expected = {"tools", "credentials", "audit", "policy"}
+    expected = {"tools", "audit", "policy"}
     actual = set(data.keys())
     assert expected == actual, f"Expected {expected}, got {actual}"
 
@@ -234,35 +196,16 @@ def test_nemoclaw_strict_enforcement():
 
 
 # --------------------------------------------------------------------------- #
-# Privacy router: must have deny rule for unclassified
+# Deceptive paths: bad example has broad path, good has scoped
 # --------------------------------------------------------------------------- #
 
 
-def test_privacy_router_fail_closed():
-    """Privacy router must deny unclassified prompts."""
-    path = EXAMPLES_DIR / "enforcement-layers/privacy-router.yaml"
-    with open(path) as f:
-        data = yaml.safe_load(f)
-    rules = data["inference"]["router"]["rules"]
-    # Last rule should be the catch-all deny
-    last_rule = rules[-1]
-    assert last_rule["match"]["classification"] == "*"
-    assert last_rule["action"] == "deny"
-
-
-# --------------------------------------------------------------------------- #
-# Deceptive Landlock: bad example has broad path, good has scoped
-# --------------------------------------------------------------------------- #
-
-
-def test_deceptive_landlock_examples():
+def test_deceptive_paths_examples():
     """Gotcha example must show both bad (broad) and good (scoped) paths."""
-    path = EXAMPLES_DIR / "gotchas/deceptive-landlock.yaml"
+    path = EXAMPLES_DIR / "gotchas/deceptive-paths.yaml"
     with open(path) as f:
         data = yaml.safe_load(f)
-    bad_paths = data["filesystem_bad"]["landlock"]["write"]
-    good_paths = data["filesystem_good"]["landlock"]["write"]
-    # Bad: overly broad /var/log/**
-    assert any("/var/log/**" in p for p in bad_paths)
-    # Good: scoped to task directory
-    assert any("${task_id}" in p for p in good_paths)
+    bad_paths = data["filesystem_policy_bad"]["read_write"]
+    good_paths = data["filesystem_policy_good"]["read_write"]
+    assert any("/var/log" == p for p in bad_paths), "Bad example should have broad /var/log"
+    assert any("onboarding" in p for p in good_paths), "Good example should scope to service"

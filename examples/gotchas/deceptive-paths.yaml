@@ -1,0 +1,11 @@
+# This looks safe. It isn't.
+# BAD: overly broad write path
+filesystem_policy_bad:
+  read_write:
+    - /var/log          # Grants write to EVERYTHING under /var/log,
+                        # including symlinks that resolve outside /var/log.
+
+# GOOD: scoped to one service's log directory
+filesystem_policy_good:
+  read_write:
+    - /var/log/onboarding   # Scoped to one service's log directory.

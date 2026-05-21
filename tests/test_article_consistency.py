@@ -4,6 +4,8 @@ These tests catch the kind of drift where the YAML config says one thing
 and the Python code assumes another.
 """
 
+import importlib.util
+import sys
 from pathlib import Path
 
 import yaml
@@ -11,120 +13,130 @@ import yaml
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 
 
+def _import_module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def test_research_egress_matches_flow_domains():
-    """Research sandbox.yaml egress allowlist must match flow.py ALLOWED_DOMAINS."""
-    # Load YAML allowlist
-    with open(EXAMPLES_DIR / "research-assistant" / "sandbox.yaml") as f:
-        manifest = yaml.safe_load(f)
-    yaml_domains = set(manifest["network"]["egress"]["allow"])
+    """Research policy egress hosts must match flow.py ALLOWED_DOMAINS."""
+    with open(EXAMPLES_DIR / "research-assistant" / "research-policy.yaml") as f:
+        policy = yaml.safe_load(f)
 
-    # Load Python ALLOWED_DOMAINS
-    import importlib.util
-    import sys
+    # Extract all endpoint hosts from network_policies
+    yaml_hosts = set()
+    for policy_val in policy["network_policies"].values():
+        for endpoint in policy_val.get("endpoints", []):
+            yaml_hosts.add(endpoint["host"])
 
-    spec = importlib.util.spec_from_file_location(
-        "research_flow",
+    mod = _import_module(
+        "research_flow_consistency",
         EXAMPLES_DIR / "research-assistant" / "flow.py",
     )
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules["research_flow"] = mod
-    spec.loader.exec_module(mod)
     python_domains = mod.ALLOWED_DOMAINS
 
-    assert yaml_domains == python_domains, (
-        f"YAML egress allowlist {yaml_domains} doesn't match "
+    assert yaml_hosts == python_domains, (
+        f"Policy endpoint hosts {yaml_hosts} don't match "
         f"Python ALLOWED_DOMAINS {python_domains}"
     )
 
 
-def test_research_inference_backend_matches_flow_llm():
-    """Research sandbox.yaml inference backend must match flow.py LLM_BACKEND."""
-    with open(EXAMPLES_DIR / "research-assistant" / "sandbox.yaml") as f:
-        manifest = yaml.safe_load(f)
-    yaml_backends = set(manifest["inference"]["router"]["allow"])
-
-    import importlib.util
-    import sys
-
-    spec = importlib.util.spec_from_file_location(
-        "research_flow_2",
-        EXAMPLES_DIR / "research-assistant" / "flow.py",
-    )
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules["research_flow_2"] = mod
-    spec.loader.exec_module(mod)
-    llm_backend = mod.LLM_BACKEND
-
-    assert llm_backend in yaml_backends, (
-        f"LLM_BACKEND '{llm_backend}' not in sandbox inference allowlist {yaml_backends}"
-    )
+def test_onboarding_policy_has_four_services():
+    """Onboarding policy must have four named network policies."""
+    with open(EXAMPLES_DIR / "onboarding-executor" / "onboarding-policy.yaml") as f:
+        policy = yaml.safe_load(f)
+    policies = policy["network_policies"]
+    assert len(policies) == 4, f"Expected 4 network policies, got {len(policies)}"
+    expected = {"identity_provider", "microsoft_graph", "calendar", "slack"}
+    assert set(policies.keys()) == expected
 
 
-def test_onboarding_sandbox_is_jit():
-    """Onboarding executor must use JIT lifetime (article section 4)."""
-    with open(EXAMPLES_DIR / "onboarding-executor" / "manifest.yaml") as f:
-        manifest = yaml.safe_load(f)
-    assert manifest["sandbox"]["lifetime"] == "jit"
-
-
-def test_research_sandbox_is_jit():
-    """Research assistant must use JIT lifetime (hello-world section)."""
-    with open(EXAMPLES_DIR / "research-assistant" / "sandbox.yaml") as f:
-        manifest = yaml.safe_load(f)
-    assert manifest["sandbox"]["lifetime"] == "jit"
-
-
-def test_onboarding_approval_gate_timeout():
-    """Onboarding approval gate timeout must be 30m (matches article)."""
-    with open(EXAMPLES_DIR / "onboarding-executor" / "manifest.yaml") as f:
-        manifest = yaml.safe_load(f)
-    gate = manifest["approval_gates"][0]
-    assert gate["timeout"] == "30m"
-    assert gate["require"] == "human_approval"
-
-
-def test_seccomp_extension_preserves_base_forbids():
-    """Seccomp extension must still forbid ptrace, exec_setuid, kmod_load."""
-    with open(EXAMPLES_DIR / "enforcement-layers" / "seccomp-extension.yaml") as f:
-        data = yaml.safe_load(f)
-    forbid = data["process"]["forbid"]
-    for syscall in ["ptrace", "exec_setuid", "kmod_load"]:
-        assert syscall in forbid, f"Seccomp extension must still forbid {syscall}"
-
-
-def test_privacy_router_has_phi_route():
-    """Privacy router must route PHI to a local model (not a public endpoint)."""
-    with open(EXAMPLES_DIR / "enforcement-layers" / "privacy-router.yaml") as f:
-        data = yaml.safe_load(f)
-    rules = data["inference"]["router"]["rules"]
-    phi_rule = next(r for r in rules if r["match"]["classification"] == "phi")
-    assert "ollama" in phi_rule["backend"], (
-        "PHI must route to a local model (ollama), not a public endpoint"
-    )
-
-
-def test_all_manifests_have_deny_default_pattern():
-    """Every sandbox manifest must follow the deny-by-default pattern.
-
-    This is the core security posture of the article: every layer that has
-    a policy must default to deny.
-    """
-    manifests = [
-        EXAMPLES_DIR / "onboarding-executor" / "manifest.yaml",
-        EXAMPLES_DIR / "research-assistant" / "sandbox.yaml",
-    ]
-    for path in manifests:
+def test_all_policies_are_version_1():
+    """Every OpenShell policy must be version 1."""
+    for rel_path in [
+        "minimal-sandbox/policy.yaml",
+        "onboarding-executor/onboarding-policy.yaml",
+        "research-assistant/research-policy.yaml",
+    ]:
+        path = EXAMPLES_DIR / rel_path
         with open(path) as f:
             data = yaml.safe_load(f)
-        # Filesystem
-        assert data["filesystem"]["landlock"]["deny_default"] is True, (
-            f"{path.name}: filesystem must deny by default"
+        assert data["version"] == 1, f"{rel_path}: must be version 1"
+
+
+def test_all_policies_deny_by_default():
+    """OpenShell policies deny by default; there's no deny_default key needed.
+
+    This test verifies we're NOT using the old invented deny_default pattern.
+    """
+    for rel_path in [
+        "minimal-sandbox/policy.yaml",
+        "onboarding-executor/onboarding-policy.yaml",
+        "research-assistant/research-policy.yaml",
+    ]:
+        path = EXAMPLES_DIR / rel_path
+        content = path.read_text()
+        assert "deny_default" not in content, (
+            f"{rel_path}: should not have deny_default (deny-by-default is inherent)"
         )
-        # Network
-        assert data["network"]["egress"]["deny_default"] is True, (
-            f"{path.name}: network must deny by default"
-        )
-        # Inference
-        assert data["inference"]["router"]["deny_default"] is True, (
-            f"{path.name}: inference must deny by default"
-        )
+
+
+def test_no_invented_uri_schemes():
+    """No files should use the invented claude-on-prem:// or nemotron-local:// schemes."""
+    for path in EXAMPLES_DIR.rglob("*"):
+        if path.is_file() and path.suffix in (".yaml", ".py", ".sh"):
+            content = path.read_text()
+            assert "claude-on-prem://" not in content, (
+                f"{path.name}: uses invented claude-on-prem:// URI"
+            )
+            assert "nemotron-local://" not in content, (
+                f"{path.name}: uses invented nemotron-local:// URI"
+            )
+
+
+def test_no_invented_cli_commands():
+    """No files should use invented OpenShell CLI commands."""
+    invented_commands = [
+        "openshell run ",
+        "openshell validate ",
+        "openshell init ",
+        "openshell drain ",
+        "openshell policy show ",
+    ]
+    for path in EXAMPLES_DIR.rglob("*"):
+        if path.is_file() and path.suffix in (".yaml", ".py", ".sh"):
+            content = path.read_text()
+            for cmd in invented_commands:
+                assert cmd not in content, (
+                    f"{path.name}: uses invented command '{cmd.strip()}'"
+                )
+
+
+def test_seccomp_extension_is_documentation():
+    """Seccomp extension file should be documentation, not a runnable config."""
+    path = EXAMPLES_DIR / "enforcement-layers" / "seccomp-extension.yaml"
+    content = path.read_text()
+    # Should be comments only (documentation), since seccomp is automatic
+    non_comment_lines = [
+        line for line in content.strip().split("\n")
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert len(non_comment_lines) == 0, (
+        "seccomp-extension.yaml should be pure documentation (comments only)"
+    )
+
+
+def test_privacy_router_is_documentation():
+    """Privacy router file should be documentation, since it's configured via CLI."""
+    path = EXAMPLES_DIR / "enforcement-layers" / "privacy-router.yaml"
+    content = path.read_text()
+    non_comment_lines = [
+        line for line in content.strip().split("\n")
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert len(non_comment_lines) == 0, (
+        "privacy-router.yaml should be pure documentation (comments only)"
+    )

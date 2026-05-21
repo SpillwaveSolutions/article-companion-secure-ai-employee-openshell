@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-# Hot-reload: add a domain to the egress allowlist without restarting the sandbox
+# Hot-reload: add a domain to a running sandbox's network policy
 set -euo pipefail
 
-cat >> /etc/openshell/egress-update.yaml <<'EOF'
-network:
-  egress:
-    add:
-      - api.newvendor.example.com
-EOF
+SANDBOX_NAME="${1:?Usage: hot-reload.sh SANDBOX_NAME}"
 
-curl -X POST http://localhost:9200/_openshell/policy/reload \
-  --data-binary @/etc/openshell/egress-update.yaml
+# Add a new endpoint to the running sandbox
+openshell policy update "$SANDBOX_NAME" \
+  --add-endpoint api.newvendor.example.com:443:rest \
+  --add-allow api.newvendor.example.com:443:GET:/v1/** \
+  --wait
 
-# Verify the reload took effect
-openshell policy show --sandbox alex-onboarding-executor --section network.egress
+# Verify the update took effect
+openshell policy get "$SANDBOX_NAME"

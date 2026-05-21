@@ -1,14 +1,25 @@
-# Privacy router: route prompts by classification
-inference:
-  router:
-    rules:
-      - match:
-          classification: phi        # protected health information
-        backend: ollama/nemotron:7b
-      - match:
-          classification: general
-        backend: openai/claude-sonnet@https://nim.internal:8080/v1
-      - match:
-          classification: "*"        # anything unclassified
-        action: deny                 # fail closed
-    deny_default: true
+# Privacy router configuration is done via CLI, not YAML.
+# This file documents the commands for reference.
+#
+# # Create a provider with backend credentials
+# openshell provider create \
+#   --name nvidia-local \
+#   --type nvidia \
+#   --from-existing   # reads NVIDIA_API_KEY from environment
+#
+# # Route all sandbox inference to this provider and model
+# openshell inference set \
+#   --provider nvidia-local \
+#   --model nvidia/nemotron-3-nano-30b-a3b \
+#   --timeout 300
+#
+# # Verify
+# openshell inference get
+#
+# Inside the sandbox, agents use:
+#   base_url: https://inference.local/v1
+#   api_key: "unused"  (the router injects real credentials)
+#
+# The router strips the agent's credentials, injects the real backend
+# credentials, rewrites the model field, and forwards to the configured
+# backend. The agent code is provider-agnostic.

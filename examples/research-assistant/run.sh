@@ -2,7 +2,15 @@
 # Run the Research Assistant inside an OpenShell sandbox
 set -euo pipefail
 
-openshell run --manifest sandbox.yaml --entrypoint "python flow.py"
+# Set up inference routing (once per gateway)
+# openshell provider create --name anthropic --type anthropic --from-existing
+# openshell inference set --provider anthropic --model claude-sonnet-4-20250514
 
-# In another terminal, watch the audit log fill in real time:
-# tail -f /var/log/research/audit.jsonl | jq '.level, .event'
+# Create and run the sandboxed agent
+openshell sandbox create \
+  --name research-assistant \
+  --policy research-policy.yaml \
+  -- python flow.py
+
+# In another terminal, stream the sandbox logs:
+# openshell logs research-assistant --tail

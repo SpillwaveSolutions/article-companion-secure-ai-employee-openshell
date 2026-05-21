@@ -1,13 +1,18 @@
-# Extending the seccomp profile for a tool that needs io_uring
-process:
-  seccomp_profile: openshell-default-strict
-  forbid:
-    - ptrace
-    - exec_setuid
-    - kmod_load
-  # Add only the specific syscalls your tool needs.
-  # Pre-audit the tool; don't extend reactively.
-  allow_additional:
-    - io_uring_setup
-    - io_uring_enter
-    - io_uring_register
+# Seccomp is applied automatically by the OpenShell supervisor.
+# The user does not directly configure seccomp in the policy YAML.
+#
+# What the user controls is the process identity:
+#
+#   process:
+#     run_as_user: sandbox
+#     run_as_group: sandbox
+#
+# The supervisor's default seccomp profile allows syscalls a typical
+# Python or Node agent needs (read, write, openat, mmap, futex, the
+# network family, the time family) and denies everything else.
+#
+# Exotic syscalls that an agent has no business making are blocked:
+#   ptrace, kexec_load, bpf, init_module, cgroup-manipulation calls
+#
+# If your agent loads a tool that needs an unusual syscall, check
+# the OpenShell docs for the current extension mechanism.

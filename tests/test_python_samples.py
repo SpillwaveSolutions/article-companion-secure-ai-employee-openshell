@@ -30,7 +30,7 @@ def test_python_syntax(py_path):
 
 def _import_module_from_path(path: Path):
     """Import a Python file as a module without running __main__ blocks."""
-    module_name = path.stem
+    module_name = f"test_import_{path.stem}_{id(path)}"
     spec = importlib.util.spec_from_file_location(module_name, path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
@@ -101,7 +101,6 @@ def test_onboarding_flow_state_management():
         EXAMPLES_DIR / "onboarding-executor" / "onboarding_flow.py"
     )
     flow = mod.OnboardingFlow()
-    # State should be accessible and writable
     flow.state["test_key"] = "test_value"
     assert flow.state["test_key"] == "test_value"
 
@@ -141,7 +140,7 @@ def test_research_flow_has_expected_methods():
 
 
 def test_research_flow_allowed_domains():
-    """ResearchFlow must define the allowed domains matching sandbox.yaml."""
+    """ResearchFlow must define the allowed domains matching research-policy.yaml."""
     mod = _import_module_from_path(
         EXAMPLES_DIR / "research-assistant" / "flow.py"
     )
@@ -157,12 +156,3 @@ def test_research_flow_has_agent_factory():
     )
     assert hasattr(mod, "_create_researcher")
     assert callable(mod._create_researcher)
-
-
-def test_research_flow_llm_backend_defined():
-    """ResearchFlow must declare the LLM backend matching sandbox.yaml."""
-    mod = _import_module_from_path(
-        EXAMPLES_DIR / "research-assistant" / "flow.py"
-    )
-    assert hasattr(mod, "LLM_BACKEND")
-    assert "nim.internal" in mod.LLM_BACKEND
