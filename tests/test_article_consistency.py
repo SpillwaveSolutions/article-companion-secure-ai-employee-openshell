@@ -21,8 +21,8 @@ def _import_module(name, path):
     return mod
 
 
-def test_research_allowed_domains_subset_of_policy():
-    """flow.py ALLOWED_DOMAINS must be a subset of the policy's endpoint hosts."""
+def test_research_policy_allows_serper():
+    """Research policy must allow google.serper.dev for search."""
     with open(EXAMPLES_DIR / "research-assistant" / "research-policy.yaml") as f:
         policy = yaml.safe_load(f)
 
@@ -31,17 +31,8 @@ def test_research_allowed_domains_subset_of_policy():
         for endpoint in policy_val.get("endpoints", []):
             yaml_hosts.add(endpoint["host"])
 
-    mod = _import_module(
-        "research_flow_consistency",
-        EXAMPLES_DIR / "research-assistant" / "flow.py",
-    )
-    python_domains = mod.ALLOWED_DOMAINS
-
-    # ALLOWED_DOMAINS (user-facing targets) must be covered by the policy.
-    # The policy may also allow additional hosts (e.g. google.serper.dev, pypi.org).
-    missing = python_domains - yaml_hosts
-    assert not missing, (
-        f"ALLOWED_DOMAINS contains hosts not in the policy: {missing}"
+    assert "google.serper.dev" in yaml_hosts, (
+        "Research policy must allow google.serper.dev for SerperDevTool"
     )
 
 

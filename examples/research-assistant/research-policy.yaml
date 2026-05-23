@@ -17,6 +17,8 @@ process:
   run_as_user: sandbox
   run_as_group: sandbox
 
+# Binary paths use globs because uv's Python path includes the patch
+# version (e.g. cpython-3.13.12) which changes across installs.
 network_policies:
   pypi:
     name: "PyPI package installation"
@@ -36,18 +38,6 @@ network_policies:
       - path: /sandbox/.uv/python/**/python3*
       - path: /sandbox/.venv/bin/python*
 
-  target_company:
-    name: "Target company website"
-    endpoints:
-      - host: spillwave.ai
-        port: 443
-        protocol: rest
-        enforcement: enforce
-        access: read-only
-    binaries:
-      - path: /sandbox/.uv/python/**/python3*
-      - path: /sandbox/.venv/bin/python*
-
   google_search:
     name: "Google search via Serper API"
     endpoints:
@@ -55,7 +45,7 @@ network_policies:
         port: 443
         protocol: rest
         enforcement: enforce
-        access: read-only
+        access: read-write
     binaries:
       - path: /sandbox/.uv/python/**/python3*
       - path: /sandbox/.venv/bin/python*

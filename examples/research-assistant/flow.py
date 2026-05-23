@@ -1,7 +1,7 @@
 # flow.py -- Competitive Research Assistant Flow
 #
-# Fetches a target company URL, uses Google to find competitors,
-# and writes a CSV report of the competitive landscape.
+# Researches a target company and finds competitors using Google search,
+# then writes a CSV report of the competitive landscape.
 #
 # Requires: crewai>=1.14.4 with anthropic extra, crewai-tools>=1.14.4
 # Runtime: OpenShell with research-policy.yaml
@@ -11,12 +11,13 @@
 # and rewrites the model to whatever `openshell inference set` configured.
 
 import csv
+import io
 import json
 import os
 
 from crewai import Agent, Crew, Task, LLM
 from crewai.flow.flow import Flow, listen, start
-from crewai_tools import ScrapeWebsiteTool, SerperDevTool
+from crewai_tools import SerperDevTool
 
 ALLOWED_DOMAINS = {"spillwave.ai"}
 
@@ -33,26 +34,28 @@ def _get_llm():
     )
 
 
+search = SerperDevTool()
+
+
 def _create_scout():
-    """Create the Company Scout agent that scrapes the target URL."""
+    """Create the Company Scout agent that researches the target company."""
     return Agent(
         role="Company Scout",
         goal=(
-            "Scrape the target company's website and extract a clear summary "
-            "of what the company does, its key products, and target market."
+            "Research a company by searching Google for information about it. "
+            "Extract what the company does, its key products, and target market."
         ),
         backstory=(
-            "You are a competitive intelligence analyst. You read company "
-            "websites and distill them into structured briefs that a "
-            "strategist can act on."
+            "You are a competitive intelligence analyst. You search for "
+            "company information and distill it into structured briefs."
         ),
-        tools=[ScrapeWebsiteTool()],
+        tools=[search],
         llm=_get_llm(),
     )
 
 
 def _create_competitor_finder():
-    """Create the Competitor Finder agent that searches Google."""
+    """Create the Competitor Finder agent that searches for competitors."""
     return Agent(
         role="Competitor Finder",
         goal=(
@@ -67,7 +70,7 @@ def _create_competitor_finder():
             "competitors from adjacent players. You always return structured "
             "JSON output."
         ),
-        tools=[SerperDevTool()],
+        tools=[search],
         llm=_get_llm(),
     )
 
@@ -75,34 +78,43 @@ def _create_competitor_finder():
 class ResearchFlow(Flow):
     @start()
     def choose_url(self):
-        """Ask the human which company URL to research."""
-        url = self.ask(
-            message=(
-                "Which company URL should I research for competitors? "
-                f"Allowed domains: {', '.join(sorted(ALLOWED_DOMAINS))}"
-            ),
-            timeout=300,
-        )
+        """Select the company URL to research.
+
+        Uses TARGET_URL env var if set, otherwise prompts via Flow.ask().
+        """
+        url = os.environ.get("TARGET_URL")
+        if not url:
+            url = self.ask(
+                message=(
+                    "Which company URL should I research for competitors? "
+                    f"Allowed domains: {', '.join(sorted(ALLOWED_DOMAINS))}"
+                ),
+                timeout=300,
+            )
+        url = url or "spillwave.ai"
         self.state["url"] = url
+        print(f"Researching: {url}")
         return url
 
     @listen(choose_url)
     def scout_company(self, url):
-        """Scrape the target URL and produce a company summary."""
+        """Search Google for the target company and produce a summary."""
         scout = _create_scout()
         task = Task(
             description=(
-                f"Scrape {url} and produce a structured summary: "
+                f"Search Google for '{url}' and produce a structured summary: "
                 "company name, what they do, key products/services, "
-                "target market, and differentiators."
+                "target market, and differentiators. "
+                "Use the search tool to find this information."
             ),
             agent=scout,
             expected_output="A structured company summary in plain text.",
         )
         crew = Crew(agents=[scout], tasks=[task])
         result = crew.kickoff()
-        self.state["company_summary"] = str(result)
-        return str(result)
+        summary = str(result)
+        self.state["company_summary"] = summary
+        return summary
 
     @listen(scout_company)
     def find_competitors(self, company_summary):
@@ -169,7 +181,7 @@ if __name__ == "__main__":
     flow = ResearchFlow()
     result = flow.kickoff()
     count = flow.state.get("competitor_count", 0)
-    print(f"Wrote {count} competitors to {result}")
+    print(f"\nWrote {count} competitors to {result}")
     if count > 0:
         with open(OUTPUT_CSV) as f:
             print(f.read())

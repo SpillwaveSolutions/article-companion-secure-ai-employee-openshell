@@ -153,8 +153,11 @@ def test_research_flow_has_agent_factories():
     mod = _import_module_from_path(
         EXAMPLES_DIR / "research-assistant" / "flow.py"
     )
-    assert hasattr(mod, "_create_scout"), "Missing _create_scout factory"
-    assert hasattr(mod, "_create_competitor_finder"), "Missing _create_competitor_finder factory"
+    assert hasattr(mod, "_create_scout"), "Missing _create_scout"
+    assert hasattr(mod, "_create_competitor_finder"), "Missing _create_competitor_finder"
+    # Both should use SerperDevTool, not ScrapeWebsiteTool
+    content = (EXAMPLES_DIR / "research-assistant" / "flow.py").read_text()
+    assert "ScrapeWebsiteTool" not in content, "Should use SerperDevTool, not ScrapeWebsiteTool"
 
 
 def test_research_flow_has_csv_config():
