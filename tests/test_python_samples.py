@@ -129,30 +129,58 @@ def test_research_flow_is_a_flow():
 
 
 def test_research_flow_has_expected_methods():
-    """ResearchFlow must have the two decorated methods from the article."""
+    """ResearchFlow must have the decorated methods for competitive research."""
     mod = _import_module_from_path(
         EXAMPLES_DIR / "research-assistant" / "flow.py"
     )
     flow = mod.ResearchFlow()
-    expected_methods = ["choose_url", "summarize"]
+    expected_methods = ["choose_url", "scout_company", "find_competitors"]
     for method_name in expected_methods:
         assert hasattr(flow, method_name), f"Missing method: {method_name}"
 
 
 def test_research_flow_allowed_domains():
-    """ResearchFlow must define the allowed domains matching research-policy.yaml."""
+    """ResearchFlow must define allowed target domains."""
     mod = _import_module_from_path(
         EXAMPLES_DIR / "research-assistant" / "flow.py"
     )
     assert hasattr(mod, "ALLOWED_DOMAINS")
-    assert "docs.example.com" in mod.ALLOWED_DOMAINS
-    assert "blog.example.com" in mod.ALLOWED_DOMAINS
+    assert "spillwave.ai" in mod.ALLOWED_DOMAINS
 
 
-def test_research_flow_has_agent_factory():
-    """ResearchFlow must have a deferred agent factory for the researcher."""
+def test_research_flow_has_agent_factories():
+    """ResearchFlow must have deferred agent factories."""
     mod = _import_module_from_path(
         EXAMPLES_DIR / "research-assistant" / "flow.py"
     )
-    assert hasattr(mod, "_create_researcher")
-    assert callable(mod._create_researcher)
+    assert hasattr(mod, "_create_scout"), "Missing _create_scout factory"
+    assert hasattr(mod, "_create_competitor_finder"), "Missing _create_competitor_finder factory"
+
+
+def test_research_flow_has_csv_config():
+    """ResearchFlow must define CSV output columns."""
+    mod = _import_module_from_path(
+        EXAMPLES_DIR / "research-assistant" / "flow.py"
+    )
+    assert hasattr(mod, "CSV_COLUMNS")
+    assert "url" in mod.CSV_COLUMNS
+    assert "name" in mod.CSV_COLUMNS
+    assert "competitive_overlap" in mod.CSV_COLUMNS
+    assert "description" in mod.CSV_COLUMNS
+
+
+def test_research_flow_uses_json_output():
+    """ResearchFlow must parse JSON (not raw CSV) from LLM for reliable output."""
+    content = (EXAMPLES_DIR / "research-assistant" / "flow.py").read_text()
+    assert "json.loads" in content, (
+        "flow.py should use json.loads to parse structured LLM output"
+    )
+
+
+def test_research_flow_has_llm_factory():
+    """ResearchFlow must have a _get_llm factory for inference.local routing."""
+    mod = _import_module_from_path(
+        EXAMPLES_DIR / "research-assistant" / "flow.py"
+    )
+    assert hasattr(mod, "_get_llm")
+    assert callable(mod._get_llm)

@@ -1,12 +1,15 @@
 # onboarding_flow.py -- CrewAI Flow for the Onboarding Executor
 #
-# This uses CrewAI's Flow architecture (v1.14.4) with @start, @listen, and
-# @router decorators. The human approval gate uses Flow.ask(), which suspends
+# This uses CrewAI's Flow architecture with @start, @listen, and @router
+# decorators. The human approval gate uses Flow.ask(), which suspends
 # execution until a human responds.
 #
 # In production, the provisioner Crew runs inside an OpenShell sandbox
-# specified by its manifest.yaml. The Flow itself runs outside the sandbox
-# in the orchestrator's privilege domain.
+# specified by onboarding-policy.yaml. The Flow itself runs outside the
+# sandbox in the orchestrator's privilege domain.
+#
+# LLM calls go through the OpenShell privacy router at
+# https://inference.local (configured via `openshell inference set`).
 
 from crewai.flow.flow import Flow, listen, router, start
 
@@ -23,10 +26,10 @@ class OnboardingFlow(Flow):
         """Create accounts in the identity provider.
 
         In production, this delegates to a Crew running inside an OpenShell
-        sandbox with scoped credentials (see manifest.yaml).
+        sandbox with scoped credentials (see onboarding-policy.yaml).
         """
-        # Placeholder: in production, this calls self.crew("provisioner").kickoff()
-        # For this example, simulate a successful account creation.
+        # Placeholder: in production, use sandboxed_run() from the
+        # orchestrator-pattern example to spawn a sandboxed sub-agent.
         self.state["account_result"] = "created"
         return self.state["account_result"]
 
@@ -54,7 +57,6 @@ class OnboardingFlow(Flow):
     def escalate(self, _):
         """Route failures to a human operator."""
         self.state["escalated"] = True
-        # In production: notify oncall channel via webhook
         return "escalated"
 
     @listen(human_gate)
@@ -62,6 +64,5 @@ class OnboardingFlow(Flow):
         """Send the welcome email and finalize audit."""
         if approval and approval.lower() == "yes":
             self.state["welcome_sent"] = True
-            # In production: self.crew("welcome_sender").kickoff(inputs=self.state)
         self.state["audit_finalized"] = True
         return self.state

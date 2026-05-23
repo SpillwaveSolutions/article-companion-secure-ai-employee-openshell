@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
-# Run the Research Assistant inside an OpenShell sandbox
+# Run the Competitive Research Assistant inside an OpenShell sandbox
 set -euo pipefail
 
-# Set up inference routing (once per gateway)
-# openshell provider create --name anthropic --type anthropic --from-existing
-# openshell inference set --provider anthropic --model claude-sonnet-4-20250514
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Create and run the sandboxed agent
+# Prerequisites:
+# 1. OpenShell gateway running (brew services start openshell)
+# 2. Providers configured:
+#    openshell provider create --name anthropic --type anthropic --from-existing
+#    openshell provider create --name serper --type generic --credential SERPER_API_KEY
+
+cd "$SCRIPT_DIR"
 openshell sandbox create \
   --name research-assistant \
   --policy research-policy.yaml \
-  -- python flow.py
-
-# In another terminal, stream the sandbox logs:
-# openshell logs research-assistant --tail
+  --provider anthropic \
+  --provider serper \
+  --upload ".:/sandbox/app" \
+  -- /bin/bash /sandbox/app/entrypoint.sh

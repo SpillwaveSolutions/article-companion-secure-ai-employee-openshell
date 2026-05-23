@@ -21,12 +21,11 @@ def _import_module(name, path):
     return mod
 
 
-def test_research_egress_matches_flow_domains():
-    """Research policy egress hosts must match flow.py ALLOWED_DOMAINS."""
+def test_research_allowed_domains_subset_of_policy():
+    """flow.py ALLOWED_DOMAINS must be a subset of the policy's endpoint hosts."""
     with open(EXAMPLES_DIR / "research-assistant" / "research-policy.yaml") as f:
         policy = yaml.safe_load(f)
 
-    # Extract all endpoint hosts from network_policies
     yaml_hosts = set()
     for policy_val in policy["network_policies"].values():
         for endpoint in policy_val.get("endpoints", []):
@@ -38,9 +37,11 @@ def test_research_egress_matches_flow_domains():
     )
     python_domains = mod.ALLOWED_DOMAINS
 
-    assert yaml_hosts == python_domains, (
-        f"Policy endpoint hosts {yaml_hosts} don't match "
-        f"Python ALLOWED_DOMAINS {python_domains}"
+    # ALLOWED_DOMAINS (user-facing targets) must be covered by the policy.
+    # The policy may also allow additional hosts (e.g. google.serper.dev, pypi.org).
+    missing = python_domains - yaml_hosts
+    assert not missing, (
+        f"ALLOWED_DOMAINS contains hosts not in the policy: {missing}"
     )
 
 
@@ -68,10 +69,7 @@ def test_all_policies_are_version_1():
 
 
 def test_all_policies_deny_by_default():
-    """OpenShell policies deny by default; there's no deny_default key needed.
-
-    This test verifies we're NOT using the old invented deny_default pattern.
-    """
+    """OpenShell policies deny by default; there's no deny_default key needed."""
     for rel_path in [
         "minimal-sandbox/policy.yaml",
         "onboarding-executor/onboarding-policy.yaml",
@@ -119,7 +117,6 @@ def test_seccomp_extension_is_documentation():
     """Seccomp extension file should be documentation, not a runnable config."""
     path = EXAMPLES_DIR / "enforcement-layers" / "seccomp-extension.yaml"
     content = path.read_text()
-    # Should be comments only (documentation), since seccomp is automatic
     non_comment_lines = [
         line for line in content.strip().split("\n")
         if line.strip() and not line.strip().startswith("#")
@@ -139,4 +136,28 @@ def test_privacy_router_is_documentation():
     ]
     assert len(non_comment_lines) == 0, (
         "privacy-router.yaml should be pure documentation (comments only)"
+    )
+
+
+def test_research_flow_uses_inference_local():
+    """Research flow must route LLM calls through inference.local."""
+    content = (EXAMPLES_DIR / "research-assistant" / "flow.py").read_text()
+    assert "inference.local" in content, (
+        "flow.py should route LLM calls through https://inference.local"
+    )
+
+
+def test_entrypoint_patches_strict_tools():
+    """Entrypoint must patch CrewAI's strict tools for Sonnet 4 compatibility."""
+    content = (EXAMPLES_DIR / "research-assistant" / "entrypoint.sh").read_text()
+    assert "strict" in content, (
+        "entrypoint.sh should patch strict tools for Sonnet 4 compatibility"
+    )
+
+
+def test_run_sh_uses_upload_dot():
+    """run.sh must use '.:/sandbox/app' upload pattern (not absolute paths)."""
+    content = (EXAMPLES_DIR / "research-assistant" / "run.sh").read_text()
+    assert ".:/sandbox/app" in content, (
+        "run.sh should use '.:/sandbox/app' to avoid directory nesting"
     )

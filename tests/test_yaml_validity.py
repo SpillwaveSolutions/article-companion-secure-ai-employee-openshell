@@ -165,6 +165,42 @@ def test_network_enforcement_is_enforce(policy):
 
 
 # --------------------------------------------------------------------------- #
+# Network policies: every policy must have a binaries list
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("policy", POLICIES_WITH_NETWORK, ids=lambda p: p.parent.name)
+def test_network_policies_have_binaries(policy):
+    """Each network policy must specify which binaries can use it."""
+    with open(policy) as f:
+        data = yaml.safe_load(f)
+    for policy_key, policy_val in data["network_policies"].items():
+        binaries = policy_val.get("binaries", [])
+        assert len(binaries) > 0, (
+            f"{policy.name}: network policy '{policy_key}' missing 'binaries' list. "
+            "Without it, no process can match the policy and connections are denied."
+        )
+
+
+@pytest.mark.parametrize("policy", POLICIES_WITH_NETWORK, ids=lambda p: p.parent.name)
+def test_binary_paths_use_globs(policy):
+    """Binary paths should use globs to handle uv's versioned Python paths."""
+    with open(policy) as f:
+        data = yaml.safe_load(f)
+    for policy_key, policy_val in data["network_policies"].items():
+        binaries = policy_val.get("binaries", [])
+        python_bins = [b["path"] for b in binaries if "python" in b.get("path", "")]
+        if python_bins:
+            has_glob = any("*" in p for p in python_bins)
+            assert has_glob, (
+                f"{policy.name}: policy '{policy_key}' has Python binaries "
+                f"without globs: {python_bins}. uv's Python path includes the "
+                "patch version (e.g. cpython-3.13.12) which changes across installs. "
+                "Use /sandbox/.uv/python/**/python3* to match any version."
+            )
+
+
+# --------------------------------------------------------------------------- #
 # NemoClaw additions
 # --------------------------------------------------------------------------- #
 

@@ -19,6 +19,8 @@ process:
   run_as_user: sandbox
   run_as_group: sandbox
 
+# Binary paths use globs because uv's Python path includes the patch
+# version (e.g. cpython-3.13.12) which changes across installs.
 network_policies:
   identity_provider:
     name: "Identity Provider API"
@@ -29,7 +31,8 @@ network_policies:
         enforcement: enforce
         access: read-write
     binaries:
-      - path: /usr/bin/python3
+      - path: /sandbox/.uv/python/**/python3*
+      - path: /sandbox/.venv/bin/python*
 
   microsoft_graph:
     name: "Microsoft Graph"
@@ -39,6 +42,9 @@ network_policies:
         protocol: rest
         enforcement: enforce
         access: read-write
+    binaries:
+      - path: /sandbox/.uv/python/**/python3*
+      - path: /sandbox/.venv/bin/python*
 
   calendar:
     name: "Calendar API"
@@ -51,6 +57,9 @@ network_policies:
           - allow:
               method: POST
               path: /v1/events
+    binaries:
+      - path: /sandbox/.uv/python/**/python3*
+      - path: /sandbox/.venv/bin/python*
 
   slack:
     name: "Slack Webhooks"
@@ -63,3 +72,6 @@ network_policies:
           - allow:
               method: POST
               path: /services/**
+    binaries:
+      - path: /sandbox/.uv/python/**/python3*
+      - path: /sandbox/.venv/bin/python*
